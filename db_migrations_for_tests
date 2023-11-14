@@ -1,0 +1,45 @@
+from sqlalchemy import Table, text
+
+from .audit_log.raw_data import SOME_ROW_DATA
+from .data_configs import ADD_AUDIT_LOG_PARAMS
+
+SOME_ROW_DATA_PARAMS = {
+    'data_list': SOME_ROW_DATA_LIST,
+    'sqla_model': tablemodel,
+}
+
+SOME_ROW_DATA_LIST = [
+    {"field_name": 11}
+  ]
+
+DATA_TO_ADD = ((ADD_AUDIT_LOG_PARAMS,),)
+
+
+def insert_storage_db_data() -> None:
+    for data_insert_step in DATA_TO_ADD:
+        with session_storage as session:
+            for data in data_insert_step:
+                add_data(session, **data)
+            session.commit()
+
+
+def create_partition(session, table_name, parent_table_name, values) -> None:
+    query = text(f'CREATE TABLE IF NOT EXISTS {table_name} PARTITION OF {parent_table_name} FOR VALUES IN ({values});')
+    session.execute(query)
+
+
+def add_data(session, data_list: list, sqla_model, parent_table_name=None, partition_id_parameter=None) -> None:
+    if isinstance(sqla_model, Table):
+        session.execute(sqla_model.insert(), data_list)
+        return None
+
+    batch_insert_data = list()
+    for data in data_list:
+        if parent_table_name and partition_id_parameter:
+            table_name = f'{parent_table_name}_{data[partition_id_parameter]}'
+            values = data[partition_id_parameter]
+            create_partition(session, table_name, parent_table_name, values)
+        sqla_data = sqla_model(**data)
+        batch_insert_data.append(sqla_data)
+    session.add_all(batch_insert_data)
+
